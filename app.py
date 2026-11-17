@@ -1,21 +1,41 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-from itertools import combinations
+import math
 
-st.set_page_config(page_title="Iconic Buildings Evaluation", page_icon="◆", layout="wide")
+st.set_page_config(
+    page_title="Iconic Buildings Evaluation Model",
+    page_icon="◆",
+    layout="wide"
+)
 
-BURGUNDY = "#7B1834"
-ACHIEVED = "#8B2945"
-NOT_ACHIEVED = "#F1D6D8"
-LEVEL_COLORS = {"Q1": "#B98A9A", "Q2": "#DFA8A0", "Q3": "#EBCB9E",
-                "Q4": "#C7D0AE", "Q5": "#AFC7D0", "Not Qualified": "#888888"}
+# Official palette approved for both visualizations
+LEVEL_COLORS = {
+    "Q1": "#8B79A8",  # Soft Violet
+    "Q2": "#477DA8",  # Muted Blue
+    "Q3": "#247C83",  # Deep Teal
+    "Q4": "#D5A441",  # Warm Amber
+    "Q5": "#D87969",  # Soft Coral
+}
+ACHIEVED = "#247C83"
+NOT_INCLUDED = "#E9E4DC"
+SELECTED = "#E0A33A"
+INK = "#20333D"
+WHITE = "#FFFFFF"
 
-CORE = {"IV": "Iconic Vision", "N": "Novelty", "A": "Applicability"}
-OUTCOMES = {"NS": "New Symbolism", "NCI": "New City Image",
-            "GA": "Global Attachment", "EG": "Economic Growth"}
+CORE = {
+    "IV": "Iconic Vision",
+    "N": "Novelty",
+    "A": "Applicability",
+}
+OUTCOMES = {
+    "NS": "New Symbolism",
+    "NCI": "New City Image",
+    "GA": "Global Attachment",
+    "EG": "Economic Growth",
+}
 
-# Exact 16 combinations from the supplied matrix, grouped by level.
+# Exactly 16 combinations: 1 + 4 + 6 + 4 + 1
 COMBINATIONS = [
     ("C1", "Q1", ("NS", "NCI", "GA", "EG")),
     ("C2", "Q2", ("NS", "NCI", "GA")),
@@ -35,157 +55,303 @@ COMBINATIONS = [
     ("C16", "Q5", ()),
 ]
 
-def classify(values):
-    if not all(bool(values[k]) for k in CORE):
-        return "Not Qualified", 0, [], None
-    achieved = [k for k in OUTCOMES if bool(values[k])]
-    count = len(achieved)
-    level = {4: "Q1", 3: "Q2", 2: "Q3", 1: "Q4", 0: "Q5"}[count]
-    combo_id = next(cid for cid, q, members in COMBINATIONS
-                    if q == level and set(members) == set(achieved))
-    return level, count, achieved, combo_id
+LEVEL_RULES = {
+    "Q1": "Core + all four complementary outcomes",
+    "Q2": "Core + any three complementary outcomes",
+    "Q3": "Core + any two complementary outcomes",
+    "Q4": "Core + any one complementary outcome",
+    "Q5": "Core requirements only",
+}
 
-def make_heatmap(selected_id=None, core_pass=True):
-    columns = ["IV", "N", "A", "NS", "NCI", "GA", "EG"]
-    z, text, ylabels = [], [], []
+def classify(values):
+    if not all(values[k] for k in CORE):
+        return "Not Qualified", [], None
+    achieved = [k for k in OUTCOMES if values[k]]
+    n = len(achieved)
+    level = {4: "Q1", 3: "Q2", 2: "Q3", 1: "Q4", 0: "Q5"}[n]
+    combo_id = next(
+        cid for cid, q, members in COMBINATIONS
+        if q == level and set(members) == set(achieved)
+    )
+    return level, achieved, combo_id
+
+def add_cube(fig, cx, cy, z0, width, height, color, selected=False, label=""):
+    """Add a rotated square-prism tile, giving an isometric stacked-diamond look."""
+    # Square corners rotated 45 degrees around its center.
+    half = width / 2
+    base = [(-half, -half), (half, -half), (half, half), (-half, half)]
+    angle = math.radians(45)
+    points = []
+    for x, y in base:
+        xr = x * math.cos(angle) - y * math.sin(angle) + cx
+        yr = x * math.sin(angle) + y * math.cos(angle) + cy
+        points.append((xr, yr))
+    verts = [(x, y, z0) for x, y in points] + [(x, y, z0 + height) for x, y in points]
+    xs, ys, zs = zip(*verts)
+    # top, bottom, and four sides
+    faces = [
+        (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4),
+        (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6),
+        (3, 0, 4), (3, 4, 7), (0, 2, 1), (0, 3, 2)
+    ]
+    i, j, k = zip(*faces)
+    fig.add_trace(go.Mesh3d(
+        x=xs, y=ys, z=zs, i=i, j=j, k=k,
+        color=color, opacity=1.0,
+        flatshading=True,
+        showscale=False,
+        hovertext=label,
+        hoverinfo="text",
+        lighting=dict(ambient=0.72, diffuse=0.75, specular=0.18, roughness=0.8),
+        lightposition=dict(x=100, y=100, z=150),
+    ))
+    # Draw a stronger outline around the selected tile.
+    if selected:
+        edge_x, edge_y, edge_z = [], [], []
+        for idx in range(4):
+            a = verts[4 + idx]
+            b = verts[4 + ((idx + 1) % 4)]
+            edge_x += [a[0], b[0], None]
+            edge_y += [a[1], b[1], None]
+            edge_z += [a[2] + 0.012, b[2] + 0.012, None]
+        fig.add_trace(go.Scatter3d(
+            x=edge_x, y=edge_y, z=edge_z, mode="lines",
+            line=dict(color=SELECTED, width=8),
+            hoverinfo="skip", showlegend=False
+        ))
+    fig.add_trace(go.Scatter3d(
+        x=[cx], y=[cy], z=[z0 + height + 0.025],
+        mode="text", text=[label.split("<br>")[0]],
+        textfont=dict(size=10 if width < 1.25 else 12, color=WHITE),
+        hoverinfo="skip", showlegend=False
+    ))
+
+def make_3d_diamond(selected_id):
+    fig = go.Figure()
+
+    # Broad core foundation (Q5)
+    q5_selected = selected_id == "C16"
+    add_cube(
+        fig, 0, 0, 0, 3.05, 0.42, LEVEL_COLORS["Q5"],
+        selected=q5_selected, label="Q5<br>Core requirements"
+    )
+
+    # Q4: four single-outcome tiles
+    q4_positions = [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)]
+    q4_ids = ["C12", "C13", "C14", "C15"]
+    for (x, y), cid in zip(q4_positions, q4_ids):
+        members = dict((c, m) for c, q, m in COMBINATIONS)[cid]
+        add_cube(
+            fig, x, y, 0.57, 1.35, 0.42, LEVEL_COLORS["Q4"],
+            selected=selected_id == cid,
+            label=f"{cid}: {members[0]}"
+        )
+
+    # Q3: six two-outcome combinations
+    q3_positions = [
+        (-1.55, 0), (-0.78, 1.35), (0.78, 1.35),
+        (1.55, 0), (0.78, -1.35), (-0.78, -1.35)
+    ]
+    q3_ids = ["C6", "C7", "C8", "C9", "C10", "C11"]
+    combo_map = {cid: members for cid, q, members in COMBINATIONS}
+    for (x, y), cid in zip(q3_positions, q3_ids):
+        members = combo_map[cid]
+        add_cube(
+            fig, x, y, 1.14, 1.12, 0.42, LEVEL_COLORS["Q3"],
+            selected=selected_id == cid,
+            label=f"{cid}: {' + '.join(members)}"
+        )
+
+    # Q2: four three-outcome combinations
+    q2_positions = [(-0.95, 0.75), (0.95, 0.75), (-0.95, -0.75), (0.95, -0.75)]
+    q2_ids = ["C2", "C3", "C4", "C5"]
+    for (x, y), cid in zip(q2_positions, q2_ids):
+        members = combo_map[cid]
+        add_cube(
+            fig, x, y, 1.71, 1.25, 0.42, LEVEL_COLORS["Q2"],
+            selected=selected_id == cid,
+            label=f"{cid}: {' + '.join(members)}"
+        )
+
+    # Q1: one top tile
+    add_cube(
+        fig, 0, 0, 2.28, 1.48, 0.52, LEVEL_COLORS["Q1"],
+        selected=selected_id == "C1",
+        label="C1: NS + NCI + GA + EG"
+    )
+
+    fig.update_layout(
+        height=650,
+        margin=dict(l=0, r=0, t=10, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        scene=dict(
+            xaxis=dict(visible=False, range=[-3.0, 3.0]),
+            yaxis=dict(visible=False, range=[-3.0, 3.0]),
+            zaxis=dict(visible=False, range=[0, 3.15]),
+            aspectmode="manual",
+            aspectratio=dict(x=1.2, y=1.2, z=0.85),
+            camera=dict(eye=dict(x=1.65, y=1.75, z=1.45)),
+            bgcolor="rgba(0,0,0,0)",
+        ),
+        showlegend=False,
+    )
+    return fig
+
+def make_heatmap(selected_id):
+    xlabels = ["IV", "N", "A", "NS", "NCI", "GA", "EG"]
+    ylabels, z, text = [], [], []
     for cid, level, members in COMBINATIONS:
-        row = [1, 1, 1] + [1 if k in members else 0 for k in ["NS", "NCI", "GA", "EG"]]
+        ylabels.append(f"{level} · {cid}")
+        row = [1, 1, 1] + [1 if key in members else 0 for key in ["NS", "NCI", "GA", "EG"]]
         z.append(row)
         text.append(["✓" if v else "–" for v in row])
-        ylabels.append(f"{level} · {cid}")
-    # Core requirements are shown as mandatory in every combination.
-    # If the current building fails a core criterion, its outcome is Not Qualified;
-    # the matrix still shows the canonical 16 eligible combinations.
+
     fig = go.Figure(go.Heatmap(
-        z=z, x=columns, y=ylabels,
-        zmin=0, zmax=1,
-        colorscale=[[0, NOT_ACHIEVED], [0.49, NOT_ACHIEVED],
+        z=z, x=xlabels, y=ylabels, zmin=0, zmax=1,
+        colorscale=[[0, NOT_INCLUDED], [0.499, NOT_INCLUDED],
                     [0.5, ACHIEVED], [1, ACHIEVED]],
-        showscale=False,
-        text=text, texttemplate="%{text}",
+        showscale=False, text=text, texttemplate="%{text}",
         xgap=5, ygap=5,
-        hovertemplate="Combination: %{y}<br>Criterion: %{x}<br>%{text}<extra></extra>",
+        hovertemplate="Combination: %{y}<br>Criterion: %{x}<br>Status: %{text}<extra></extra>"
     ))
     if selected_id:
-        index = [c[0] for c in COMBINATIONS].index(selected_id)
-        fig.add_shape(type="rect", xref="paper", yref="y",
-                      x0=0, x1=1, y0=index-0.48, y1=index+0.48,
-                      line=dict(color=BURGUNDY, width=3), fillcolor="rgba(0,0,0,0)")
+        row_index = [c[0] for c in COMBINATIONS].index(selected_id)
+        fig.add_shape(
+            type="rect", xref="paper", yref="y",
+            x0=0, x1=1, y0=row_index - 0.48, y1=row_index + 0.48,
+            line=dict(color=SELECTED, width=4),
+            fillcolor="rgba(0,0,0,0)"
+        )
     fig.update_layout(
-        height=610, margin=dict(l=10, r=10, t=20, b=10),
+        height=620,
+        margin=dict(l=10, r=10, t=35, b=10),
         xaxis=dict(side="top", tickfont=dict(size=13), fixedrange=True),
         yaxis=dict(autorange="reversed", tickfont=dict(size=12), fixedrange=True),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#35151D"),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=INK),
     )
     return fig
 
 if "evaluations" not in st.session_state:
     st.session_state.evaluations = []
 
-st.title("Iconic Buildings Evaluation Tool")
-st.caption("Binary evaluation · 5 Iconicity Levels · 16 Combinations")
+st.title("Iconic Buildings Evaluation Model")
+st.caption("Interactive Evaluation Dashboard · 3D Stacked Diamond + 16-Combination Heatmap")
 
-tab_eval, tab_compare, tab_saved, tab_rules = st.tabs(
+evaluate_tab, compare_tab, saved_tab, rules_tab = st.tabs(
     ["Evaluate a Building", "Compare Buildings", "Saved Evaluations", "Model Rules"]
 )
 
-with tab_eval:
-    left, right = st.columns([0.85, 1.5], gap="large")
+with evaluate_tab:
+    left, right = st.columns([0.85, 1.6], gap="large")
     with left:
         st.subheader("1. Building Information")
-        name = st.text_input("Building name", placeholder="e.g. Sydney Opera House")
+        building = st.text_input("Building name", placeholder="e.g. Sydney Opera House")
         location = st.text_input("Location", placeholder="City, Country")
         year = st.text_input("Completion year (optional)", placeholder="e.g. 1973")
 
         st.subheader("2. Evaluation Criteria")
-        st.markdown("**Core Requirements (all three are mandatory)**")
+        st.markdown("**Core Requirements — all three are mandatory**")
         values = {}
-        for code, label in CORE.items():
-            values[code] = st.checkbox(f"{code} — {label}", value=False, key=f"core_{code}")
+        for key, label in CORE.items():
+            values[key] = st.checkbox(f"{key} — {label}", key=f"core_{key}")
         st.divider()
         st.markdown("**Complementary Outcomes**")
-        for code, label in OUTCOMES.items():
-            values[code] = st.checkbox(f"{code} — {label}", value=False, key=f"out_{code}")
+        for key, label in OUTCOMES.items():
+            values[key] = st.checkbox(f"{key} — {label}", key=f"out_{key}")
+        save_clicked = st.button("Evaluate & Save Building", type="primary", use_container_width=True)
 
-        evaluate = st.button("Evaluate Building", type="primary", use_container_width=True)
-
-    level, count, achieved, combo_id = classify(values)
+    level, achieved, combo_id = classify(values)
     with right:
-        st.subheader("3. Evaluation Result")
+        st.subheader("3. Linked Visual Evaluation")
         m1, m2, m3 = st.columns(3)
         m1.metric("Iconicity Level", level)
         m2.metric("Combination", combo_id or "—")
-        m3.metric("Achieved Outcomes", f"{count}/4")
-        if level == "Not Qualified":
-            st.error("Not Qualified — at least one mandatory Core Requirement is not achieved.")
-        else:
-            st.success(f"{level} Iconicity · {combo_id} · Core requirements achieved")
-        st.subheader("Combination Heatmap — 16 Combinations")
-        st.caption("Rows represent the exact 16 combinations; columns show the three Core Requirements and four Complementary Outcomes. The outlined row is the current result.")
-        st.plotly_chart(make_heatmap(combo_id, level != "Not Qualified"),
-                        use_container_width=True, config={"displayModeBar": False})
-        st.caption("Dark cells = achieved within that combination · Light cells = not included in that combination.")
+        m3.metric("Outcomes Achieved", f"{len(achieved)}/4")
 
-        if evaluate:
-            if not name.strip():
-                st.warning("Please enter a building name before saving the evaluation.")
+        if level == "Not Qualified":
+            st.warning("Not Qualified: all three Core Requirements must be achieved. This result is outside Q1–Q5.")
+        else:
+            st.success(f"{level} Iconicity · {combo_id} — {LEVEL_RULES[level]}")
+
+        st.markdown("#### 3D Stacked Diamond Model")
+        st.caption("Rotate, zoom, and inspect the combination tiles. The selected combination is outlined in amber.")
+        st.plotly_chart(make_3d_diamond(combo_id), use_container_width=True,
+                        config={"displayModeBar": True, "scrollZoom": True})
+
+        st.markdown("#### Interactive Combination Heatmap")
+        st.caption("The amber outline marks the same combination highlighted in the 3D model.")
+        st.plotly_chart(make_heatmap(combo_id), use_container_width=True,
+                        config={"displayModeBar": False})
+        st.markdown(
+            f"<span style='color:{ACHIEVED};font-weight:700'>■ Achieved / included</span>"
+            f"&nbsp;&nbsp;&nbsp; <span style='color:#9A9389;font-weight:700'>■ Not included</span>"
+            f"&nbsp;&nbsp;&nbsp; <span style='color:{SELECTED};font-weight:700'>▱ Selected combination</span>",
+            unsafe_allow_html=True
+        )
+
+        if save_clicked:
+            if not building.strip():
+                st.error("Please enter a building name before saving.")
             else:
                 record = {
-                    "Building": name.strip(), "Location": location.strip(), "Year": year.strip(),
+                    "Building": building.strip(),
+                    "Location": location.strip(),
+                    "Year": year.strip(),
                     **{CORE[k]: "Achieved" if values[k] else "Not achieved" for k in CORE},
                     **{OUTCOMES[k]: "Achieved" if values[k] else "Not achieved" for k in OUTCOMES},
-                    "Iconicity Level": level, "Combination": combo_id or "Not Qualified",
+                    "Iconicity Level": level,
+                    "Combination": combo_id or "Not Qualified",
                     "Achieved Outcomes": ", ".join(achieved) if achieved else "None",
                 }
                 st.session_state.evaluations = [
                     r for r in st.session_state.evaluations
-                    if r["Building"].casefold() != name.strip().casefold()
+                    if r["Building"].casefold() != building.strip().casefold()
                 ]
                 st.session_state.evaluations.append(record)
-                st.success(f"Evaluation saved for {name.strip()} in this session.")
+                st.success(f"Saved evaluation for {building.strip()} in this session.")
 
-with tab_compare:
-    st.subheader("Compare Buildings")
+with compare_tab:
+    st.subheader("Building Comparison")
     if not st.session_state.evaluations:
-        st.info("Save at least one evaluation to compare buildings.")
+        st.info("Evaluate and save buildings to compare their results.")
     else:
         df = pd.DataFrame(st.session_state.evaluations)
-        st.dataframe(df[["Building", "Location", "Iconicity Level", "Combination",
-                         "Achieved Outcomes"]], use_container_width=True, hide_index=True)
+        st.dataframe(df[["Building", "Location", "Iconicity Level", "Combination", "Achieved Outcomes"]],
+                     use_container_width=True, hide_index=True)
         level_order = ["Q1", "Q2", "Q3", "Q4", "Q5", "Not Qualified"]
         counts = df["Iconicity Level"].value_counts().reindex(level_order, fill_value=0)
-        fig = go.Figure(go.Bar(
-            x=counts.index, y=counts.values,
-            marker_color=[LEVEL_COLORS[x] for x in counts.index],
-            text=counts.values, textposition="outside"
-        ))
-        fig.update_layout(title="Distribution of Evaluated Buildings by Iconicity Level",
-                          xaxis_title="Iconicity Level", yaxis_title="Number of Buildings",
-                          yaxis=dict(rangemode="tozero"), height=380)
+        bar_colors = [LEVEL_COLORS.get(x, "#8A8A8A") for x in level_order]
+        fig = go.Figure(go.Bar(x=level_order, y=counts.values, marker_color=bar_colors,
+                               text=counts.values, textposition="outside"))
+        fig.update_layout(title="Buildings by Iconicity Level", height=380,
+                          xaxis_title="Iconicity Level", yaxis_title="Number of Buildings")
         st.plotly_chart(fig, use_container_width=True)
 
-with tab_saved:
+with saved_tab:
     st.subheader("Saved Evaluations")
     if not st.session_state.evaluations:
-        st.info("No saved evaluations yet.")
+        st.info("No saved evaluations in this session yet.")
     else:
         df = pd.DataFrame(st.session_state.evaluations)
         st.dataframe(df, use_container_width=True, hide_index=True)
-        st.download_button("Download results as CSV", df.to_csv(index=False).encode("utf-8-sig"),
-                           file_name="iconicity_evaluations.csv", mime="text/csv")
+        st.download_button("Download results as CSV",
+                           df.to_csv(index=False).encode("utf-8-sig"),
+                           file_name="iconicity_evaluations.csv",
+                           mime="text/csv")
         if st.button("Clear session evaluations"):
             st.session_state.evaluations = []
             st.rerun()
 
-with tab_rules:
-    st.subheader("Model Rules")
+with rules_tab:
+    st.subheader("Evaluation Model Rules")
     st.markdown("""
-- **Core gate:** IV (Iconic Vision), N (Novelty), and A (Applicability) must all be achieved.
-- If any Core Requirement is not achieved, the building is **Not Qualified** and excluded from Q1–Q5.
-- If all Core Requirements are achieved, classification depends on the number of achieved Complementary Outcomes.
+**Core Requirements:** Iconic Vision (IV), Novelty (N), and Applicability (A).
+All three are mandatory. If any one is not achieved, the building is **Not Qualified**
+and remains outside the Q1–Q5 classification.
 
-| Level | Combination | Number |
+| Level | Rule | Combinations |
 |---|---|---:|
 | Q1 | Core + NS + NCI + GA + EG | 1 |
 | Q2 | Core + any three outcomes | 4 |
@@ -194,5 +360,9 @@ with tab_rules:
 | Q5 | Core only | 1 |
 | **Total** | | **16** |
 
-The heatmap lists all 16 combinations explicitly. It is a binary model: no averages, weights, or numerical scoring are applied.
+**Complementary Outcomes:** NS — New Symbolism; NCI — New City Image;
+GA — Global Attachment; EG — Economic Growth.
+
+The 3D Stacked Diamond and the Heatmap use the same 16-combination model.
+The amber outline identifies the evaluated combination in both visualizations.
 """)
