@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from itertools import combinations
 
-st.set_page_config(page_title="Iconic Buildings Evaluation", page_icon="◆", layout="wide")
+st.set_page_config(page_title="Iconic Buildings Evaluation tool", page_icon="◆", layout="wide")
 
 LEVEL_COLORS = {
     "Q1": "#87945C",  # olive
