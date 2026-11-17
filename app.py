@@ -129,7 +129,7 @@ def add_cube(fig, cx, cy, z0, width, height, color, selected=False, label="", le
             y=[v[1] for v in outline],
             z=[v[2] + 0.032 for v in outline],
             mode="lines",
-            line=dict(color="#E0A33A", width=13),
+            line=dict(color="#7A1831", width=13),
             hoverinfo="skip", showlegend=False
         ))
 
