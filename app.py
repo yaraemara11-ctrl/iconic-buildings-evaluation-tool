@@ -11,15 +11,15 @@ st.set_page_config(
 
 # Official palette approved for both visualizations
 LEVEL_COLORS = {
-    "Q1": "#8B79A8",  # Soft Violet
-    "Q2": "#477DA8",  # Muted Blue
-    "Q3": "#247C83",  # Deep Teal
-    "Q4": "#D5A441",  # Warm Amber
-    "Q5": "#D87969",  # Soft Coral
+    "Q1": "#A6A875",  # muted olive / sage
+    "Q2": "#6FA8A1",  # muted teal
+    "Q3": "#E2B66B",  # warm ochre
+    "Q4": "#C98282",  # dusty rose
+    "Q5": "#A78FA7",  # muted mauve
 }
-ACHIEVED = "#247C83"
-NOT_INCLUDED = "#E9E4DC"
-SELECTED = "#E0A33A"
+ACHIEVED = "#7A1831"
+NOT_INCLUDED = "#F1D0D0"
+SELECTED = "#74152E"
 INK = "#20333D"
 WHITE = "#FFFFFF"
 
@@ -76,126 +76,131 @@ def classify(values):
     return level, achieved, combo_id
 
 def add_cube(fig, cx, cy, z0, width, height, color, selected=False, label=""):
-    """Add a rotated square-prism tile, giving an isometric stacked-diamond look."""
-    # Square corners rotated 45 degrees around its center.
+    """Draw one raised isometric diamond tile with visible side faces."""
     half = width / 2
-    base = [(-half, -half), (half, -half), (half, half), (-half, half)]
-    angle = math.radians(45)
-    points = []
-    for x, y in base:
-        xr = x * math.cos(angle) - y * math.sin(angle) + cx
-        yr = x * math.sin(angle) + y * math.cos(angle) + cy
-        points.append((xr, yr))
-    verts = [(x, y, z0) for x, y in points] + [(x, y, z0 + height) for x, y in points]
+    # A square rotated 45 degrees reads as a diamond from the camera angle.
+    base = [(-half, 0), (0, half), (half, 0), (0, -half)]
+    verts = [(cx + x, cy + y, z0) for x, y in base]
+    verts += [(cx + x, cy + y, z0 + height) for x, y in base]
     xs, ys, zs = zip(*verts)
-    # top, bottom, and four sides
+
+    # Top face plus four side faces.
     faces = [
-        (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4),
-        (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6),
-        (3, 0, 4), (3, 4, 7), (0, 2, 1), (0, 3, 2)
+        (4, 5, 6), (4, 6, 7),
+        (0, 1, 5), (0, 5, 4),
+        (1, 2, 6), (1, 6, 5),
+        (2, 3, 7), (2, 7, 6),
+        (3, 0, 4), (3, 4, 7),
     ]
-    i, j, k = zip(*faces)
+    ii, jj, kk = zip(*faces)
     fig.add_trace(go.Mesh3d(
-        x=xs, y=ys, z=zs, i=i, j=j, k=k,
-        color=color, opacity=1.0,
-        flatshading=True,
-        showscale=False,
-        hovertext=label,
-        hoverinfo="text",
-        lighting=dict(ambient=0.72, diffuse=0.75, specular=0.18, roughness=0.8),
+        x=xs, y=ys, z=zs, i=ii, j=jj, k=kk,
+        color=color, opacity=1,
+        flatshading=True, showscale=False,
+        hovertext=label, hoverinfo="text",
+        lighting=dict(ambient=0.78, diffuse=0.72, specular=0.12, roughness=0.9),
         lightposition=dict(x=100, y=100, z=150),
     ))
-    # Draw a stronger outline around the selected tile.
+
+    # Fine cream seams keep the stacked-diamond construction legible.
+    outline = verts[4:] + [verts[4]]
+    fig.add_trace(go.Scatter3d(
+        x=[v[0] for v in outline],
+        y=[v[1] for v in outline],
+        z=[v[2] + 0.008 for v in outline],
+        mode="lines",
+        line=dict(color="#F8F0E8", width=3),
+        hoverinfo="skip", showlegend=False
+    ))
     if selected:
-        edge_x, edge_y, edge_z = [], [], []
-        for idx in range(4):
-            a = verts[4 + idx]
-            b = verts[4 + ((idx + 1) % 4)]
-            edge_x += [a[0], b[0], None]
-            edge_y += [a[1], b[1], None]
-            edge_z += [a[2] + 0.012, b[2] + 0.012, None]
         fig.add_trace(go.Scatter3d(
-            x=edge_x, y=edge_y, z=edge_z, mode="lines",
-            line=dict(color=SELECTED, width=8),
+            x=[v[0] for v in outline],
+            y=[v[1] for v in outline],
+            z=[v[2] + 0.018 for v in outline],
+            mode="lines",
+            line=dict(color="#FFFFFF", width=9),
             hoverinfo="skip", showlegend=False
         ))
+
+    # Abbreviations are shown on the top face; full combination is in hover.
+    short_label = label.split(": ", 1)[-1].replace(" + ", "<br>")
+    if short_label == "Core requirements":
+        short_label = "Q5<br>Core"
+    label_color = "#3B2630" if color in (LEVEL_COLORS["Q3"], LEVEL_COLORS["Q4"]) else "#FFFFFF"
     fig.add_trace(go.Scatter3d(
-        x=[cx], y=[cy], z=[z0 + height + 0.025],
-        mode="text", text=[label.split("<br>")[0]],
-        textfont=dict(size=10 if width < 1.25 else 12, color=WHITE),
+        x=[cx], y=[cy], z=[z0 + height + 0.035],
+        mode="text", text=[short_label],
+        textfont=dict(size=9 if width < 1.1 else 11, color=label_color),
         hoverinfo="skip", showlegend=False
     ))
 
-def make_3d_diamond(selected_id):
-    fig = go.Figure()
 
-    # Broad core foundation (Q5)
-    q5_selected = selected_id == "C16"
+def make_3d_diamond(selected_id):
+    """Layered 3D diamond: Q5 foundation, then Q4/Q3/Q2/Q1 combinations."""
+    fig = go.Figure()
+    combo_map = {cid: members for cid, level, members in COMBINATIONS}
+
+    # Core foundation: a broad mauve diamond platform.
     add_cube(
-        fig, 0, 0, 0, 3.05, 0.42, LEVEL_COLORS["Q5"],
-        selected=q5_selected, label="Q5<br>Core requirements"
+        fig, 0, 0, 0.0, 4.0, 0.38, LEVEL_COLORS["Q5"],
+        selected=selected_id == "C16",
+        label="C16: Core requirements"
     )
 
-    # Q4: four single-outcome tiles
-    q4_positions = [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)]
-    q4_ids = ["C12", "C13", "C14", "C15"]
-    for (x, y), cid in zip(q4_positions, q4_ids):
-        members = dict((c, m) for c, q, m in COMBINATIONS)[cid]
+    # Q4: four single-outcome tiles around the foundation.
+    q4_positions = [(-1.05, 0), (0, 1.05), (1.05, 0), (0, -1.05)]
+    for (x, y), cid in zip(q4_positions, ["C12", "C13", "C14", "C15"]):
         add_cube(
-            fig, x, y, 0.57, 1.35, 0.42, LEVEL_COLORS["Q4"],
+            fig, x, y, 0.48, 1.22, 0.38, LEVEL_COLORS["Q4"],
             selected=selected_id == cid,
-            label=f"{cid}: {members[0]}"
+            label=f"{cid}: {' + '.join(combo_map[cid])}"
         )
 
-    # Q3: six two-outcome combinations
+    # Q3: six two-outcome tiles.
     q3_positions = [
-        (-1.55, 0), (-0.78, 1.35), (0.78, 1.35),
-        (1.55, 0), (0.78, -1.35), (-0.78, -1.35)
+        (-1.55, 0.0), (-0.78, 1.35), (0.78, 1.35),
+        (1.55, 0.0), (0.78, -1.35), (-0.78, -1.35)
     ]
-    q3_ids = ["C6", "C7", "C8", "C9", "C10", "C11"]
-    combo_map = {cid: members for cid, q, members in COMBINATIONS}
-    for (x, y), cid in zip(q3_positions, q3_ids):
-        members = combo_map[cid]
+    for (x, y), cid in zip(q3_positions, ["C6", "C7", "C8", "C9", "C10", "C11"]):
         add_cube(
-            fig, x, y, 1.14, 1.12, 0.42, LEVEL_COLORS["Q3"],
+            fig, x, y, 0.96, 1.05, 0.38, LEVEL_COLORS["Q3"],
             selected=selected_id == cid,
-            label=f"{cid}: {' + '.join(members)}"
+            label=f"{cid}: {' + '.join(combo_map[cid])}"
         )
 
-    # Q2: four three-outcome combinations
-    q2_positions = [(-0.95, 0.75), (0.95, 0.75), (-0.95, -0.75), (0.95, -0.75)]
-    q2_ids = ["C2", "C3", "C4", "C5"]
-    for (x, y), cid in zip(q2_positions, q2_ids):
-        members = combo_map[cid]
+    # Q2: four three-outcome tiles.
+    q2_positions = [(-0.68, 0.68), (0.68, 0.68), (-0.68, -0.68), (0.68, -0.68)]
+    for (x, y), cid in zip(q2_positions, ["C2", "C3", "C4", "C5"]):
         add_cube(
-            fig, x, y, 1.71, 1.25, 0.42, LEVEL_COLORS["Q2"],
+            fig, x, y, 1.44, 1.18, 0.38, LEVEL_COLORS["Q2"],
             selected=selected_id == cid,
-            label=f"{cid}: {' + '.join(members)}"
+            label=f"{cid}: {' + '.join(combo_map[cid])}"
         )
 
-    # Q1: one top tile
+    # Q1: single top tile with all four complementary outcomes.
     add_cube(
-        fig, 0, 0, 2.28, 1.48, 0.52, LEVEL_COLORS["Q1"],
+        fig, 0, 0, 1.92, 1.35, 0.48, LEVEL_COLORS["Q1"],
         selected=selected_id == "C1",
         label="C1: NS + NCI + GA + EG"
     )
 
     fig.update_layout(
         height=650,
-        margin=dict(l=0, r=0, t=10, b=0),
+        margin=dict(l=0, r=0, t=8, b=0),
         paper_bgcolor="rgba(0,0,0,0)",
         scene=dict(
-            xaxis=dict(visible=False, range=[-3.0, 3.0]),
-            yaxis=dict(visible=False, range=[-3.0, 3.0]),
-            zaxis=dict(visible=False, range=[0, 3.15]),
+            xaxis=dict(visible=False, range=[-2.8, 2.8]),
+            yaxis=dict(visible=False, range=[-2.8, 2.8]),
+            zaxis=dict(visible=False, range=[0, 2.65]),
             aspectmode="manual",
-            aspectratio=dict(x=1.2, y=1.2, z=0.85),
-            camera=dict(eye=dict(x=1.65, y=1.75, z=1.45)),
+            aspectratio=dict(x=1.15, y=1.15, z=0.82),
+            camera=dict(eye=dict(x=1.55, y=1.75, z=1.35)),
             bgcolor="rgba(0,0,0,0)",
         ),
         showlegend=False,
     )
     return fig
+
 
 def make_heatmap(selected_id):
     xlabels = ["IV", "N", "A", "NS", "NCI", "GA", "EG"]
@@ -286,7 +291,7 @@ with evaluate_tab:
                         config={"displayModeBar": False})
         st.markdown(
             f"<span style='color:{ACHIEVED};font-weight:700'>■ Achieved / included</span>"
-            f"&nbsp;&nbsp;&nbsp; <span style='color:#9A9389;font-weight:700'>■ Not included</span>"
+            f"&nbsp;&nbsp;&nbsp; <span style='color:#D7A6A9;font-weight:700'>■ Not included</span>"
             f"&nbsp;&nbsp;&nbsp; <span style='color:{SELECTED};font-weight:700'>▱ Selected combination</span>",
             unsafe_allow_html=True
         )
