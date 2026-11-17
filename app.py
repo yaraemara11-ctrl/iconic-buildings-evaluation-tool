@@ -99,7 +99,7 @@ def make_matrix_figure(level, achieved):
 if "evaluations" not in st.session_state:
     st.session_state.evaluations = []
 
-st.title("3D Iconicity Combination Matrix")
+st.title("3D Iconic Buildings Evaluation Tool")
 st.caption("Binary evaluation tool based on the 5-level, 16-combination model.")
 
 with st.sidebar:
