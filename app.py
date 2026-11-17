@@ -240,7 +240,7 @@ def make_heatmap(selected_id):
         fig.add_shape(
             type="rect", xref="paper", yref="y",
             x0=0, x1=1, y0=row_index - 0.48, y1=row_index + 0.48,
-            line=dict(color=SELECTED, width=4),
+            line=dict(color="#C58B32", width=4),
             fillcolor="rgba(0,0,0,0)"
         )
     fig.update_layout(
