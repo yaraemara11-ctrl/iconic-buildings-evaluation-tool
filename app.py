@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from itertools import combinations
 
-st.set_page_config(page_title="Iconic Buildings Evaluation Model", page_icon="◆", layout="wide")
+st.set_page_config(page_title="Iconic Buildings Evaluation", page_icon="◆", layout="wide")
 
 BURGUNDY = "#7B1834"
 ACHIEVED = "#8B2945"
@@ -83,7 +83,7 @@ def make_heatmap(selected_id=None, core_pass=True):
 if "evaluations" not in st.session_state:
     st.session_state.evaluations = []
 
-st.title("Iconic Buildings Evaluation Model")
+st.title("Iconic Buildings Evaluation Tool")
 st.caption("Binary evaluation · 5 Iconicity Levels · 16 Combinations")
 
 tab_eval, tab_compare, tab_saved, tab_rules = st.tabs(
