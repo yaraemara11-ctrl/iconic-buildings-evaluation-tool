@@ -75,7 +75,7 @@ def classify(values):
     )
     return level, achieved, combo_id
 
-def add_cube(fig, cx, cy, z0, width, height, color, selected=False, label=""):
+def add_cube(fig, cx, cy, z0, width, height, color, selected=False, label="", level_selected=False):
     """Draw one raised isometric diamond tile with visible side faces."""
     half = width / 2
     # A square rotated 45 degrees reads as a diamond from the camera angle.
@@ -112,13 +112,24 @@ def add_cube(fig, cx, cy, z0, width, height, color, selected=False, label=""):
         line=dict(color="#F8F0E8", width=3),
         hoverinfo="skip", showlegend=False
     ))
-    if selected:
+    if level_selected:
+        # Bright outline around every tile in the evaluated level.
         fig.add_trace(go.Scatter3d(
             x=[v[0] for v in outline],
             y=[v[1] for v in outline],
-            z=[v[2] + 0.018 for v in outline],
+            z=[v[2] + 0.020 for v in outline],
             mode="lines",
-            line=dict(color="#FFFFFF", width=9),
+            line=dict(color="#FFF8E8", width=10),
+            hoverinfo="skip", showlegend=False
+        ))
+    if selected:
+        # Amber outline pinpoints the exact combination within the highlighted level.
+        fig.add_trace(go.Scatter3d(
+            x=[v[0] for v in outline],
+            y=[v[1] for v in outline],
+            z=[v[2] + 0.032 for v in outline],
+            mode="lines",
+            line=dict(color="#E0A33A", width=13),
             hoverinfo="skip", showlegend=False
         ))
 
@@ -135,8 +146,8 @@ def add_cube(fig, cx, cy, z0, width, height, color, selected=False, label=""):
     ))
 
 
-def make_3d_diamond(selected_id):
-    """Layered 3D diamond: Q5 foundation, then Q4/Q3/Q2/Q1 combinations."""
+def make_3d_diamond(selected_id, selected_level):
+    """Layered 3D diamond with evaluated level illuminated."""
     fig = go.Figure()
     combo_map = {cid: members for cid, level, members in COMBINATIONS}
 
@@ -144,7 +155,8 @@ def make_3d_diamond(selected_id):
     add_cube(
         fig, 0, 0, 0.0, 4.0, 0.38, LEVEL_COLORS["Q5"],
         selected=selected_id == "C16",
-        label="C16: Core requirements"
+        label="C16: Core requirements",
+        level_selected=(selected_level == "Q5")
     )
 
     # Q4: four single-outcome tiles around the foundation.
@@ -153,7 +165,8 @@ def make_3d_diamond(selected_id):
         add_cube(
             fig, x, y, 0.48, 1.22, 0.38, LEVEL_COLORS["Q4"],
             selected=selected_id == cid,
-            label=f"{cid}: {' + '.join(combo_map[cid])}"
+            label=f"{cid}: {' + '.join(combo_map[cid])}",
+            level_selected=(selected_level == "Q4")
         )
 
     # Q3: six two-outcome tiles.
@@ -165,7 +178,8 @@ def make_3d_diamond(selected_id):
         add_cube(
             fig, x, y, 0.96, 1.05, 0.38, LEVEL_COLORS["Q3"],
             selected=selected_id == cid,
-            label=f"{cid}: {' + '.join(combo_map[cid])}"
+            label=f"{cid}: {' + '.join(combo_map[cid])}",
+            level_selected=(selected_level == "Q3")
         )
 
     # Q2: four three-outcome tiles.
@@ -174,27 +188,29 @@ def make_3d_diamond(selected_id):
         add_cube(
             fig, x, y, 1.44, 1.18, 0.38, LEVEL_COLORS["Q2"],
             selected=selected_id == cid,
-            label=f"{cid}: {' + '.join(combo_map[cid])}"
+            label=f"{cid}: {' + '.join(combo_map[cid])}",
+            level_selected=(selected_level == "Q2")
         )
 
     # Q1: single top tile with all four complementary outcomes.
     add_cube(
         fig, 0, 0, 1.92, 1.35, 0.48, LEVEL_COLORS["Q1"],
         selected=selected_id == "C1",
-        label="C1: NS + NCI + GA + EG"
+        label="C1: NS + NCI + GA + EG",
+        level_selected=(selected_level == "Q1")
     )
 
     fig.update_layout(
-        height=650,
+        height=820,
         margin=dict(l=0, r=0, t=8, b=0),
         paper_bgcolor="rgba(0,0,0,0)",
         scene=dict(
-            xaxis=dict(visible=False, range=[-2.8, 2.8]),
-            yaxis=dict(visible=False, range=[-2.8, 2.8]),
+            xaxis=dict(visible=False, range=[-2.45, 2.45]),
+            yaxis=dict(visible=False, range=[-2.45, 2.45]),
             zaxis=dict(visible=False, range=[0, 2.65]),
             aspectmode="manual",
-            aspectratio=dict(x=1.15, y=1.15, z=0.82),
-            camera=dict(eye=dict(x=1.55, y=1.75, z=1.35)),
+            aspectratio=dict(x=1.28, y=1.28, z=0.92),
+            camera=dict(eye=dict(x=1.35, y=1.50, z=1.18)),
             bgcolor="rgba(0,0,0,0)",
         ),
         showlegend=False,
@@ -281,9 +297,10 @@ with evaluate_tab:
             st.success(f"{level} Iconicity · {combo_id} — {LEVEL_RULES[level]}")
 
         st.markdown("#### 3D Stacked Diamond Model")
-        st.caption("Rotate, zoom, and inspect the combination tiles. The selected combination is outlined in amber.")
-        st.plotly_chart(make_3d_diamond(combo_id), use_container_width=True,
+        st.caption("The full evaluated level is illuminated with a bright outline; the exact combination is emphasized in amber. Rotate or zoom to inspect the model.")
+        st.plotly_chart(make_3d_diamond(combo_id, level if level != "Not Qualified" else None), use_container_width=True,
                         config={"displayModeBar": True, "scrollZoom": True})
+        st.markdown("**Model highlight:** bright cream outline = evaluated level · amber outline = exact combination")
 
         st.markdown("#### Interactive Combination Heatmap")
         st.caption("The amber outline marks the same combination highlighted in the 3D model.")
